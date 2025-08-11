@@ -1,0 +1,44 @@
+from sklearn.datasets import load_iris
+from sklearn.model_selection import train_test_split
+from sklearn.preprocessing import StandardScaler
+from sklearn.neighbors import KNeighborsClassifier
+from sklearn.naive_bayes import GaussianNB
+from sklearn.metrics import classification_report, accuracy_score
+
+# Load dataset
+iris = load_iris()
+X = iris.data
+y = iris.target
+
+# Split into training and test sets
+X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.3, random_state=0)
+
+# Feature scaling
+scaler = StandardScaler()
+X_train_scaled = scaler.fit_transform(X_train)
+X_test_scaled = scaler.transform(X_test)
+
+# Models
+knn = KNeighborsClassifier(n_neighbors=3)
+nb = GaussianNB()
+
+# Train models
+knn.fit(X_train_scaled, y_train)
+nb.fit(X_train_scaled, y_train)
+
+# Predictions
+y_pred_knn = knn.predict(X_test_scaled)
+y_pred_nb = nb.predict(X_test_scaled)
+
+# Evaluation function
+def evaluate_model(y_true, y_pred, model_name):
+    print(f"--- {model_name} ---")
+    print(f"Accuracy: {accuracy_score(y_true, y_pred):.2f}")
+    print("Classification Report:")
+    print(classification_report(y_true, y_pred, target_names=iris.target_names))
+
+# Evaluate KNN
+evaluate_model(y_test, y_pred_knn, "K-Nearest Neighbors")
+
+# Evaluate Naive Bayes
+evaluate_model(y_test, y_pred_nb, "Gaussian Naive Bayes")
