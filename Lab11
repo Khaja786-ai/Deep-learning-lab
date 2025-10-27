@@ -1,0 +1,130 @@
+import torch
+import torch.nn as nn
+import torch.optim as optim
+from torchvision import datasets, transforms
+from torch.utils.data import DataLoader
+import matplotlib.pyplot as plt
+import matplotlib.cm as cm
+import numpy as np
+
+# ------------------------------
+# Hyperparameters
+# ------------------------------
+batch_size = 128
+epochs = 10
+learning_rate = 1e-3
+latent_dim = 2  # 2D latent space for visualization
+
+# ------------------------------
+# Dataset
+# ------------------------------
+transform = transforms.ToTensor()
+train_dataset = datasets.MNIST(root='data', train=True, download=True, transform=transform)
+test_dataset = datasets.MNIST(root='data', train=False, download=True, transform=transform)
+
+train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True)
+test_loader = DataLoader(test_dataset, batch_size=batch_size, shuffle=False)
+
+# ------------------------------
+# VAE Model
+# ------------------------------
+class VAE(nn.Module):
+    def __init__(self):
+        super().__init__()
+        self.fc1 = nn.Linear(28*28, 256)
+        self.fc_mu = nn.Linear(256, latent_dim)
+        self.fc_logvar = nn.Linear(256, latent_dim)
+        self.fc2 = nn.Linear(latent_dim, 256)
+        self.fc3 = nn.Linear(256, 28*28)
+
+    def encode(self, x):
+        h = torch.relu(self.fc1(x))
+        return self.fc_mu(h), self.fc_logvar(h)
+
+    def reparameterize(self, mu, logvar):
+        std = torch.exp(0.5*logvar)
+        eps = torch.randn_like(std)
+        return mu + eps * std
+
+    def decode(self, z):
+        h = torch.relu(self.fc2(z))
+        return torch.sigmoid(self.fc3(h))
+
+    def forward(self, x):
+        mu, logvar = self.encode(x)
+        z = self.reparameterize(mu, logvar)
+        return self.decode(z), mu, logvar
+
+# ------------------------------
+# Device and Model
+# ------------------------------
+device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+model = VAE().to(device)
+optimizer = optim.Adam(model.parameters(), lr=learning_rate)
+
+# ------------------------------
+# Loss Function
+# ------------------------------
+def loss_fn(recon_x, x, mu, logvar):
+    BCE = nn.functional.binary_cross_entropy(recon_x, x.view(-1, 28*28), reduction='sum')
+    KLD = -0.5 * torch.sum(1 + logvar - mu.pow(2) - logvar.exp())
+    return BCE + KLD
+
+# ------------------------------
+# Training Loop with Train & Test Loss
+# ------------------------------
+train_losses = []
+test_losses = []
+
+for epoch in range(epochs):
+    model.train()
+    running_loss = 0
+    for x, _ in train_loader:
+        x = x.to(device).view(x.size(0), -1)  # Flatten
+        optimizer.zero_grad()
+        recon, mu, logvar = model(x)
+        loss = loss_fn(recon, x, mu, logvar)
+        loss.backward()
+        optimizer.step()
+        running_loss += loss.item()
+    avg_train_loss = running_loss / len(train_loader)
+    train_losses.append(avg_train_loss)
+
+    # Compute test loss
+    model.eval()
+    test_loss = 0
+    with torch.no_grad():
+        for x, _ in test_loader:
+            x = x.to(device).view(x.size(0), -1)
+            recon, mu, logvar = model(x)
+            test_loss += loss_fn(recon, x, mu, logvar).item()
+    avg_test_loss = test_loss / len(test_loader)
+    test_losses.append(avg_test_loss)
+
+    print(f"Epoch {epoch+1}/{epochs} | Train Loss: {avg_train_loss:.4f} | Test Loss: {avg_test_loss:.4f}")
+
+# ------------------------------
+# Plot Train & Test Loss
+# ------------------------------
+plt.plot(train_losses, label='Train Loss')
+plt.plot(test_losses, label='Test Loss')
+plt.xlabel('Epochs')
+plt.ylabel('Loss')
+plt.title('VAE Train vs Test Loss')
+plt.legend()
+plt.show()
+
+# ------------------------------
+# Visualize 2D Latent Space
+# ------------------------------
+x_sample, y_sample = next(iter(test_loader))
+x_sample = x_sample.to(device).view(x_sample.size(0), -1)
+with torch.no_grad():
+    mu, logvar = model.encode(x_sample)
+mu = mu.cpu().numpy()
+
+plt.figure(figsize=(8,6))
+scatter = plt.scatter(mu[:,0], mu[:,1], c=y_sample, cmap=cm.tab10)
+plt.colorbar(scatter)
+plt.title('VAE 2D Latent Space (Test Set)')
+plt.show()
